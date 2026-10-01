@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Word Rain – Typing Game</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@500;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#f6efe0; --sky:#e9dfc6; --ink:#1d2a44; --tag:#fffaf0; --hit:#1f9d78; --warn:#e4572e; --line:#1d2a44;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){--bg:#121a2c; --sky:#18223a; --ink:#f1e9d6; --tag:#25324f; --hit:#4fd1a5; --warn:#ff7a52; --line:#f1e9d6;}
+}
+:root[data-theme="dark"]{--bg:#121a2c; --sky:#18223a; --ink:#f1e9d6; --tag:#25324f; --hit:#4fd1a5; --warn:#ff7a52; --line:#f1e9d6;}
+html{height:100%;scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:"Bricolage Grotesque",system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column;overflow:hidden}
+header{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;font-weight:800;font-size:1.05rem;gap:12px}
+header span b{font-weight:500;opacity:.7;margin-right:6px}
+#lives{letter-spacing:.15em;color:var(--warn)}
+#arena{position:relative;flex:1;margin:0 12px;background:var(--sky);border:2px solid var(--line);border-bottom:none;border-radius:14px 14px 0 0;overflow:hidden}
+.word{position:absolute;top:0;padding:4px 12px;background:var(--tag);border:2px solid var(--line);border-radius:8px;font-weight:800;font-size:1.15rem;white-space:nowrap;will-change:transform;box-shadow:3px 3px 0 var(--line)}
+.word.active{border-color:var(--hit);box-shadow:3px 3px 0 var(--hit)}
+.word i{font-style:normal;color:var(--hit)}
+#ground{height:14px;margin:0 12px;background:var(--line);border-radius:0 0 8px 8px}
+#bar{padding:14px 16px 18px;display:flex;gap:10px}
+#input{flex:1;min-width:0;font:inherit;font-weight:800;font-size:1.2rem;padding:12px 14px;border:2px solid var(--line);border-radius:10px;background:var(--tag);color:var(--ink);outline:none}
+#input:focus-visible{outline:3px solid var(--hit);outline-offset:2px}
+#input.miss{animation:shake .15s}
+@keyframes shake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
+.overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:24px;background:color-mix(in srgb,var(--sky) 92%,transparent);z-index:5}
+.overlay.hide{display:none}
+h1{margin:0;font-size:clamp(2rem,8vw,3.4rem);font-weight:800;line-height:1}
+p{margin:0;max-width:34ch;line-height:1.45}
+button{font:inherit;font-weight:800;font-size:1.05rem;padding:12px 26px;border:2px solid var(--line);border-radius:10px;background:var(--hit);color:#fff;cursor:pointer;box-shadow:3px 3px 0 var(--line)}
+button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--line)}
+button:focus-visible{outline:3px solid var(--warn);outline-offset:3px}
+@media (prefers-reduced-motion:reduce){#input.miss{animation:none}}
+</style>
+</head>
+<body>
+<header>
+  <span><b>Score</b><em id="score" style="font-style:normal">0</em></span>
+  <span><b>Level</b><em id="level" style="font-style:normal">1</em></span>
+  <span id="lives" aria-label="Lives">♥♥♥</span>
+</header>
+<div id="arena">
+  <div class="overlay" id="menu">
+    <h1>Word Rain</h1>
+    <p>Words fall from the sky. Type one and it vanishes. Don't let three hit the ground.</p>
+    <p id="best"></p>
+    <button id="start">Start game</button>
+  </div>
+</div>
+<div id="ground"></div>
+<div id="bar"><input id="input" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Type here…" aria-label="Type the falling words"></div>
+
+<script>
+(function(){
+  var WORDS="rain cloud storm bolt drift gust mist frost flood breeze puddle thunder umbrella drizzle lightning shower hail fog dew wind sky wave tide river ocean spark ember flame glow dusk dawn moon star comet orbit planet galaxy rocket signal pixel cursor keyboard letter typing finger rhythm speed focus swift quick nimble sharp bright clever steady balance courage garden forest meadow canyon island desert harbor lantern anchor compass journey".split(" ");
+  var arena=document.getElementById("arena"), input=document.getElementById("input"),
+      menu=document.getElementById("menu"), scoreEl=document.getElementById("score"),
+      levelEl=document.getElementById("level"), livesEl=document.getElementById("lives"),
+      bestEl=document.getElementById("best"), startBtn=document.getElementById("start");
+  var items=[], score=0, lives=3, level=1, running=false, last=0, spawnTimer=0, killed=0, best=0, target=null;
+
+  try{ best=parseInt(localStorage.getItem("wordrain-best"),10)||0; }catch(e){}
+  function showBest(){ bestEl.textContent=best?("Best score: "+best):""; }
+  showBest();
+
+  function hearts(){ livesEl.textContent="♥".repeat(Math.max(lives,0))+"♡".repeat(Math.max(3-lives,0)); }
+
+  function spawn(){
+    var w=WORDS[Math.floor(Math.random()*WORDS.length)];
+    if(items.some(function(i){return i.text===w;})) return;
+    var el=document.createElement("div");
+    el.className="word"; el.textContent=w;
+    arena.appendChild(el);
+    var maxX=Math.max(arena.clientWidth-el.offsetWidth-8,0);
+    var o={el:el,text:w,x:4+Math.random()*maxX,y:-40,speed:(38+level*9)+Math.random()*18};
+    items.push(o); draw(o);
+  }
+  function draw(o){ o.el.style.transform="translate("+o.x+"px,"+o.y+"px)"; }
+
+  function setTarget(o){
+    if(target&&target!==o){ target.el.classList.remove("active"); target.el.textContent=target.text; }
+    target=o;
+  }
+  function render(o,n){
+    if(n>0){ o.el.classList.add("active"); o.el.innerHTML="<i>"+o.text.slice(0,n)+"</i>"+o.text.slice(n); }
+    else { o.el.classList.remove("active"); o.el.textContent=o.text; }
+  }
+
+  input.addEventListener("input",function(){
+    if(!running) return;
+    var v=input.value.toLowerCase().trim();
+    if(!v){ if(target){render(target,0);} target=null; return; }
+    var cand=(target&&target.text.indexOf(v)===0)?target:null;
+    if(!cand){
+      var best=null;
+      items.forEach(function(i){ if(i.text.indexOf(v)===0&&(!best||i.y>best.y)) best=i; });
+      cand=best;
+    }
+    if(!cand){ input.classList.remove("miss"); void input.offsetWidth; input.classList.add("miss"); input.value=v.slice(0,-1); if(target){render(target,input.value.length);} return; }
+    setTarget(cand); render(cand,v.length);
+    if(v===cand.text){
+      score+=cand.text.length*10; killed++;
+      remove(cand); target=null; input.value="";
+      if(killed%8===0){ level++; levelEl.textContent=level; }
+      scoreEl.textContent=score;
+    }
+  });
+
+  function remove(o){ o.el.remove(); items=items.filter(function(i){return i!==o;}); }
+
+  function loop(t){
+    if(!running) return;
+    var dt=Math.min((t-last)/1000,.05); last=t;
+    spawnTimer-=dt;
+    if(spawnTimer<=0){ spawn(); spawnTimer=Math.max(2.2-level*.18,.7); }
+    var floor=arena.clientHeight-38;
+    items.slice().forEach(function(o){
+      o.y+=o.speed*dt; draw(o);
+      if(o.y>=floor){
+        if(o===target){ target=null; input.value=""; }
+        remove(o); lives--; hearts();
+        if(lives<=0) end();
+      }
+    });
+    if(running) requestAnimationFrame(loop);
+  }
+
+  function begin(){
+    items.forEach(function(i){i.el.remove();}); items=[]; target=null;
+    score=0; lives=3; level=1; killed=0; spawnTimer=0;
+    scoreEl.textContent=0; levelEl.textContent=1; hearts(); input.value="";
+    menu.classList.add("hide"); running=true; last=performance.now();
+    input.focus(); requestAnimationFrame(loop);
+  }
+  function end(){
+    running=false;
+    var isBest=score>best;
+    if(isBest){ best=score; try{ localStorage.setItem("wordrain-best",String(best)); }catch(e){} }
+    menu.querySelector("h1").textContent="Game over";
+    menu.querySelector("p").textContent="You scored "+score+" and reached level "+level+(isBest?" — a new best!":".");
+    showBest(); startBtn.textContent="Play again";
+    menu.classList.remove("hide");
+  }
+  startBtn.addEventListener("click",begin);
+  document.addEventListener("keydown",function(e){
+    if(!running&&e.key==="Enter"&&document.activeElement!==startBtn){ begin(); }
+    else if(running&&document.activeElement!==input&&e.key.length===1){ input.focus(); }
+  });
+  hearts();
+})();
+</script>
+</body>
+</html>
