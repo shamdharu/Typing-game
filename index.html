@@ -67,6 +67,20 @@ button:focus-visible{outline:3px solid var(--warn);outline-offset:3px}
       bestEl=document.getElementById("best"), startBtn=document.getElementById("start");
   var items=[], score=0, lives=3, level=1, running=false, last=0, spawnTimer=0, killed=0, best=0, target=null;
 
+  var POOL=WORDS.slice();
+  function loadWords(){
+    try{
+      fetch("https://random-word-api.herokuapp.com/word?number=150")
+        .then(function(r){return r.json();})
+        .then(function(a){
+          var ok=a.filter(function(w){return /^[a-z]{3,9}$/.test(w);});
+          if(ok.length>=30) POOL=ok;
+        })
+        .catch(function(){});
+    }catch(e){}
+  }
+  loadWords();
+
   try{ best=parseInt(localStorage.getItem("wordrain-best"),10)||0; }catch(e){}
   function showBest(){ bestEl.textContent=best?("Best score: "+best):""; }
   showBest();
@@ -74,7 +88,7 @@ button:focus-visible{outline:3px solid var(--warn);outline-offset:3px}
   function hearts(){ livesEl.textContent="♥".repeat(Math.max(lives,0))+"♡".repeat(Math.max(3-lives,0)); }
 
   function spawn(){
-    var w=WORDS[Math.floor(Math.random()*WORDS.length)];
+    var w=POOL[Math.floor(Math.random()*POOL.length)];
     if(items.some(function(i){return i.text===w;})) return;
     var el=document.createElement("div");
     el.className="word"; el.textContent=w;
